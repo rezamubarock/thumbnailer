@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { DEFAULT_ADJUSTMENTS, AdjustmentSettings, TextOverlay } from './types';
 import { editImageWithGemini } from './services/geminiService';
-import { Loader, Download, Sparkles, YoutubeIcon, RefreshCw, Wand2 } from './components/Icons';
+import { Loader, Download, Sparkles, YoutubeIcon, RefreshCw, Wand2, Key } from './components/Icons';
 
 // --- Utility Functions ---
 
@@ -51,6 +51,9 @@ const App: React.FC = () => {
   const [textOverlays, setTextOverlays] = useState<TextOverlay[]>([]);
   const [newText, setNewText] = useState('');
   
+  // Authentication State (Persisted)
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('azera_api_key') || '');
+
   // Text Editor State
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -59,6 +62,12 @@ const App: React.FC = () => {
   // Refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hiddenCanvasRef = useRef<HTMLCanvasElement>(null); 
+
+  // --- Effects ---
+  
+  useEffect(() => {
+    localStorage.setItem('azera_api_key', apiKey);
+  }, [apiKey]);
 
   // --- Handlers ---
 
@@ -145,7 +154,6 @@ const App: React.FC = () => {
     if (!ctx) return;
 
     // Check collision with text
-    // Note: This is an approximation. 
     for (let i = textOverlays.length - 1; i >= 0; i--) {
       const overlay = textOverlays[i];
       // Re-calculate font settings to get accurate measure
@@ -278,14 +286,23 @@ const App: React.FC = () => {
   };
 
   const handleGeminiEdit = async () => {
+    if (!apiKey) {
+      setErrorMsg("SECURITY ALERT: API KEY MISSING");
+      return;
+    }
     if (!currentImage || !hiddenCanvasRef.current || !aiPrompt.trim()) return;
+    
     setIsProcessing(true);
     setErrorMsg(null);
+    
     try {
       await drawToCanvas(hiddenCanvasRef.current, currentImage, adjustments, textOverlays, null);
       const dataUrl = hiddenCanvasRef.current.toDataURL('image/png');
       const base64 = dataUrl.split(',')[1];
-      const newImageBase64 = await editImageWithGemini(base64, 'image/png', aiPrompt);
+      
+      // Pass API Key explicitly to the service
+      const newImageBase64 = await editImageWithGemini(apiKey, base64, 'image/png', aiPrompt);
+      
       setCurrentImage(newImageBase64);
       setAdjustments(DEFAULT_ADJUSTMENTS);
       setTextOverlays([]);
@@ -362,6 +379,24 @@ const App: React.FC = () => {
             <h2 className="font-bold tracking-widest uppercase text-xs">AI_CORE_MODULE</h2>
           </div>
 
+          {/* API Key Input Section */}
+          <div className="mb-6 border border-green-900 bg-green-950/10 p-3">
+            <div className="flex items-center gap-2 mb-2 text-green-600">
+                <Key className="w-3 h-3" />
+                <span className="text-[10px] font-bold uppercase tracking-wider">SECURITY_CLEARANCE</span>
+            </div>
+            <input
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="ENTER_GEMINI_API_KEY"
+                className="w-full bg-black border border-green-800 px-2 py-1 text-xs focus:outline-none focus:border-green-500 text-green-400 placeholder-green-900 font-mono transition-all"
+            />
+            <p className="text-[9px] text-green-800 mt-1">
+               * KEY SAVED LOCALLY. NO SERVER TRANSMISSION.
+            </p>
+          </div>
+
           <div className="bg-green-900/5 p-4 border border-green-800 mb-6 relative overflow-hidden">
             <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-green-500"></div>
             <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-green-500"></div>
@@ -379,7 +414,7 @@ const App: React.FC = () => {
             />
             <button
               onClick={handleGeminiEdit}
-              disabled={!currentImage || isProcessing || !aiPrompt}
+              disabled={!currentImage || isProcessing || !aiPrompt || !apiKey}
               className="w-full py-3 bg-green-900/30 border border-green-600 hover:bg-green-500 hover:text-black font-bold text-sm text-green-500 flex justify-center items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed uppercase"
             >
                {isProcessing ? <Loader className="w-4 h-4" /> : <><Wand2 className="w-4 h-4" /> COMPILE_EDIT</>}
@@ -390,7 +425,7 @@ const App: React.FC = () => {
           </div>
 
           {errorMsg && (
-            <div className="bg-red-900/20 border border-red-500 text-red-500 p-3 text-xs font-mono animate-pulse">
+            <div className="bg-red-900/20 border border-red-500 text-red-500 p-3 text-xs font-mono animate-pulse break-all">
               [ERROR]: {errorMsg}
             </div>
           )}
